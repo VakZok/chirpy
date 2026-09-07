@@ -41,15 +41,15 @@ func main() {
 	myHandler.Handle("/app/", wrappedFileServer)
 
 	// handling healt data using anonymous function that returns handler function
-	myHandler.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
+	myHandler.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("OK"))
 	})
 
 	// handling website visit counter
-	myHandler.HandleFunc("/metrics", cfg.myMetricHandler)
-	myHandler.HandleFunc("/reset", cfg.myResetHandler)
+	myHandler.HandleFunc("GET /admin/metrics", cfg.myMetricHandler)
+	myHandler.HandleFunc("POST /api/reset", cfg.myResetHandler)
 
 	// configuring http server
 	s := &http.Server{
