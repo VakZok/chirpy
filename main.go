@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -31,11 +32,72 @@ func (cfg *apiConfig) myMetricHandler(writer http.ResponseWriter, request *http.
 	)))
 }
 
+
 func (cfg *apiConfig) myResetHandler(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	writer.WriteHeader(http.StatusOK)
 	cfg.fileserverHits.Store(0)
 }
+
+
+func respondWithError(w http.ResponseWriter, code int, msg string){
+	type returnVals struct {
+        Error string `json:"error"`
+    }
+
+    respBody := returnVals{
+    	Error: msg,
+    }
+
+    respondWithJSON(w, code, respBody)
+}
+
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(code)
+    w.Write(data)
+}
+
+
+func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Request) {
+	// JSON decoding
+	type parameters struct { // what we expect
+        Body string `json:"body"`
+    }
+
+    decoder := json.NewDecoder(r.Body)
+    params := parameters{}
+    err := decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
+    if err != nil { // decoding unsucessfull
+    	respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+     	return
+    }
+
+    if len(params.Body) > 140 { // body too long
+    	respondWithError(w, 400, "Chirp is too long")
+     	return
+    }
+
+    // JSON properly decoded and has proper format
+    type returnVals struct {
+		Valid bool `json:"valid"`
+	}
+   
+	respBody := returnVals {
+		Valid: true,
+	}
+   
+	respondWithJSON(w, 200, respBody)
+}
+
 
 func main() {
 	myHandler := http.NewServeMux()
@@ -57,6 +119,9 @@ func main() {
 	// handling website visit counter
 	myHandler.HandleFunc("GET /admin/metrics", cfg.myMetricHandler)
 	myHandler.HandleFunc("POST /admin/reset", cfg.myResetHandler)
+
+	// new route for json
+	myHandler.HandleFunc("POST /api/validate_chirp", cfg.myChirpValidationHandler)
 
 	// configuring http server
 	s := &http.Server{
