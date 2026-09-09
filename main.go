@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -32,26 +33,35 @@ func (cfg *apiConfig) myMetricHandler(writer http.ResponseWriter, request *http.
 	)))
 }
 
-
 func (cfg *apiConfig) myResetHandler(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	writer.WriteHeader(http.StatusOK)
 	cfg.fileserverHits.Store(0)
 }
 
-
-func respondWithError(w http.ResponseWriter, code int, msg string){
+func respondWithError(w http.ResponseWriter, code int, msg string) {
 	type returnVals struct {
-        Error string `json:"error"`
-    }
+		Error string `json:"error"`
+	}
 
-    respBody := returnVals{
-    	Error: msg,
-    }
+	respBody := returnVals{
+		Error: msg,
+	}
 
-    respondWithJSON(w, code, respBody)
+	respondWithJSON(w, code, respBody)
 }
 
+func cleanBody(body string) string {
+	words := strings.Split(body, " ")
+	for idx, word := range words {
+		if strings.ToLower(word) == "kerfuffle" || strings.ToLower(word) == "sharbert" || strings.ToLower(word) == "fornax" {
+			words[idx] = "****"
+		}
+	}
+
+	cleanedBody := strings.Join(words, " ")
+	return cleanedBody
+}
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	data, err := json.Marshal(payload)
@@ -62,42 +72,44 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(code)
-    w.Write(data)
+	w.WriteHeader(code)
+	w.Write(data)
 }
-
 
 func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
 	type parameters struct { // what we expect
-        Body string `json:"body"`
-    }
-
-    decoder := json.NewDecoder(r.Body)
-    params := parameters{}
-    err := decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
-    if err != nil { // decoding unsucessfull
-    	respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
-     	return
-    }
-
-    if len(params.Body) > 140 { // body too long
-    	respondWithError(w, 400, "Chirp is too long")
-     	return
-    }
-
-    // JSON properly decoded and has proper format
-    type returnVals struct {
-		Valid bool `json:"valid"`
+		Body string `json:"body"`
 	}
-   
-	respBody := returnVals {
-		Valid: true,
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
+	if err != nil {                // decoding unsucessfull
+		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+		return
 	}
-   
+
+	if len(params.Body) > 140 { // body too long
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	// JSON properly decoded and has proper format
+	// Replace any "profane" words
+
+	cleanedBody := cleanBody(params.Body)
+
+	type returnVals struct {
+		Cleaned_body string `json:"cleaned_body"`
+	}
+
+	respBody := returnVals{
+		Cleaned_body: cleanedBody,
+	}
+
 	respondWithJSON(w, 200, respBody)
 }
-
 
 func main() {
 	myHandler := http.NewServeMux()
