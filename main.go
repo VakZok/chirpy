@@ -202,6 +202,31 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	// since request does not contain json/body, we can tackle the db directly
+	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("Error getting chirps: %s", err))
+		return
+	}
+
+	// transform chirps from DB to struct type
+	chirps := []chirp{}
+	for _, dbChirp := range dbChirps {
+		chirp := chirp{
+			ID:        dbChirp.ID,
+			CreatedAt: dbChirp.CreatedAt,
+			UpdatedAt: dbChirp.UpdatedAt,
+			Body:      dbChirp.Body,
+			UserID:    dbChirp.UserID,
+		}
+
+		chirps = append(chirps, chirp)
+	}
+
+	respondWithJSON(w, 200, chirps)
+}
+
 func main() {
 	godotenv.Load()
 
@@ -243,6 +268,9 @@ func main() {
 
 	// handle new user creation
 	myHandler.HandleFunc("POST /api/users", cfg.myUserHandler)
+
+	// handle retrieving all chirps
+	myHandler.HandleFunc("GET /api/chirps", cfg.getChirpsHandler)
 
 	// configuring http server
 	s := &http.Server{
