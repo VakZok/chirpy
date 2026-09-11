@@ -199,7 +199,6 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, 201, respBody)
-
 }
 
 func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +224,33 @@ func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, 200, chirps)
+}
+
+func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
+	// since request does not contain json/body, we can tackle the db directly
+	// but first: ransform String to UUID type
+	parsedID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, 400, fmt.Sprintf("Error parsing UserID: %s", err))
+		return
+	}
+
+	dbChirp, err := cfg.db.GetChirp(r.Context(), parsedID)
+	if err != nil {
+		respondWithError(w, 404, fmt.Sprintf("Error getting chirp: %s", err))
+		return
+	}
+
+	// transform chirps from DB to struct type
+	chirp := chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
+	}
+
+	respondWithJSON(w, 200, chirp)
 }
 
 func main() {
@@ -269,7 +295,8 @@ func main() {
 	// handle new user creation
 	myHandler.HandleFunc("POST /api/users", cfg.myUserHandler)
 
-	// handle retrieving all chirps
+	// handle retrieving chirps
+	myHandler.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirpHandler)
 	myHandler.HandleFunc("GET /api/chirps", cfg.getChirpsHandler)
 
 	// configuring http server
