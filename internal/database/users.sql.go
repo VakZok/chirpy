@@ -15,7 +15,7 @@ VALUES (
     gen_random_uuid(),
     NOW(),
     NOW(),
-    $1
+    $1          -- email from client request
 )
 RETURNING id, created_at, updated_at, email
 `

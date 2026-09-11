@@ -4,6 +4,6 @@ VALUES (
     gen_random_uuid(),
     NOW(),
     NOW(),
-    $1
+    $1          -- email from client request
 )
-RETURNING *;
+RETURNING *;    -- return all values for http response

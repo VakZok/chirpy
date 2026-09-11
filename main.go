@@ -24,6 +24,14 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+type chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
@@ -107,17 +115,18 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Write(data)
 }
 
-func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
-	type parameters struct { // what we expect (the request we get)
-		Body string `json:"body"`
+	type parameters struct { // what we expect (the client request we get)
+		Body   string `json:"body"`
+		UserID string `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	err := decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
 	if err != nil {                // decoding unsucessfull
-		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+		respondWithError(w, 400, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
 	}
 
@@ -126,20 +135,40 @@ func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// JSON properly decoded and has proper format
-	// Replace any "profane" words
+	// JSON properly decoded and has proper format (chirp aka tweet is valid)
 
+	// Replace any "profane" words
 	cleanedBody := cleanBody(params.Body)
 
-	type returnVals struct {
-		Cleaned_body string `json:"cleaned_body"`
+	// Transform String to UUID type
+	parsedID, err := uuid.Parse(params.UserID)
+	if err != nil {
+		respondWithError(w, 400, fmt.Sprintf("Error parsing UserID: %s", err))
+		return
 	}
 
-	respBody := returnVals{
-		Cleaned_body: cleanedBody,
+	// Fill DB query struct (use auto-generated struct from saveChirp.sql.go)
+	queryParameters := database.SaveChirpParams{
+		Body:   cleanedBody,
+		UserID: parsedID,
 	}
 
-	respondWithJSON(w, 200, respBody)
+	// Query Database
+	dbChirp, err := cfg.db.SaveChirp(r.Context(), queryParameters)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("Error posting chirp: %s", err))
+		return
+	}
+
+	respBody := chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
+	}
+
+	respondWithJSON(w, 201, respBody)
 }
 
 func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +181,7 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 	err := decoder.Decode(&params) //decode into params struct using pointer
 	if err != nil {
-		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+		respondWithError(w, 400, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
 	}
 
@@ -198,7 +227,7 @@ func main() {
 	wrappedFileServer := cfg.middlewareMetricsInc(strippedPrefixFileServer)
 	myHandler.Handle("/app/", wrappedFileServer)
 
-	// handling healt data using anonymous function that returns handler function
+	// handling health data using anonymous function that returns handler function
 	myHandler.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		writer.WriteHeader(http.StatusOK)
@@ -210,7 +239,7 @@ func main() {
 	myHandler.HandleFunc("POST /admin/reset", cfg.myResetHandler)
 
 	// handle posting a chirp in json format (cleaned some bad words)
-	myHandler.HandleFunc("POST /api/validate_chirp", cfg.myChirpValidationHandler)
+	myHandler.HandleFunc("POST /api/chirps", cfg.createChirpHandler)
 
 	// handle new user creation
 	myHandler.HandleFunc("POST /api/users", cfg.myUserHandler)
