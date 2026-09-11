@@ -9,15 +9,25 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/VakZok/chirpy/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -41,9 +51,23 @@ func (cfg *apiConfig) myMetricHandler(writer http.ResponseWriter, request *http.
 }
 
 func (cfg *apiConfig) myResetHandler(writer http.ResponseWriter, request *http.Request) {
+	if cfg.platform != "dev" {
+		writer.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	// reset page visit counter
+	cfg.fileserverHits.Store(0)
+
+	// reset aka delete allusers from database
+	err := cfg.db.DeleteAllUsers(request.Context())
+	if err != nil {
+		respondWithError(writer, 500, fmt.Sprintf("Error deleteing user: %s", err))
+		return
+	}
+
 	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	writer.WriteHeader(http.StatusOK)
-	cfg.fileserverHits.Store(0)
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -85,7 +109,7 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 
 func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
-	type parameters struct { // what we expect
+	type parameters struct { // what we expect (the request we get)
 		Body string `json:"body"`
 	}
 
@@ -118,6 +142,37 @@ func (cfg *apiConfig) myChirpValidationHandler(w http.ResponseWriter, r *http.Re
 	respondWithJSON(w, 200, respBody)
 }
 
+func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
+	// JSON decoding
+	type parameters struct { // what we expect (the request we get)
+		Email string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params) //decode into params struct using pointer
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("Error decoding parameters: %s", err))
+		return
+	}
+
+	dbUser, err := cfg.db.CreateUser(r.Context(), params.Email) // get user from db
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("Error creating user: %s", err))
+		return
+	}
+
+	respBody := User{ // fill user struct with values from db user
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	respondWithJSON(w, 201, respBody)
+
+}
+
 func main() {
 	godotenv.Load()
 
@@ -132,9 +187,11 @@ func main() {
 
 	myHandler := http.NewServeMux()
 	cfg := &apiConfig{
-		db: dbQueries,
+		db:       dbQueries,
+		platform: os.Getenv("PLATFORM"),
 	}
 
+	// Endpoints
 	// handling fileserver
 	fileServer := http.FileServer(http.Dir("."))
 	strippedPrefixFileServer := http.StripPrefix("/app", fileServer)
@@ -152,8 +209,11 @@ func main() {
 	myHandler.HandleFunc("GET /admin/metrics", cfg.myMetricHandler)
 	myHandler.HandleFunc("POST /admin/reset", cfg.myResetHandler)
 
-	// new route for json
+	// handle posting a chirp in json format (cleaned some bad words)
 	myHandler.HandleFunc("POST /api/validate_chirp", cfg.myChirpValidationHandler)
+
+	// handle new user creation
+	myHandler.HandleFunc("POST /api/users", cfg.myUserHandler)
 
 	// configuring http server
 	s := &http.Server{
