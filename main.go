@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VakZok/chirpy/internal/auth"
 	"github.com/VakZok/chirpy/internal/database"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -174,7 +175,8 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
 	type parameters struct { // what we expect (the request we get)
-		Email string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -185,7 +187,19 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dbUser, err := cfg.db.CreateUser(r.Context(), params.Email) // get user from db
+	// hash password
+	hash, err := auth.HashPassword(params.Password)
+	if err != nil {
+		respondWithError(w, 400, fmt.Sprintf("Error hashing password: %s", err))
+		return
+	}
+
+	queryParameters := database.CreateUserParams{
+		Email:          params.Email,
+		HashedPassword: hash,
+	}
+
+	dbUser, err := cfg.db.CreateUser(r.Context(), queryParameters) // set and get user from db
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("Error creating user: %s", err))
 		return
@@ -199,6 +213,48 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, 201, respBody)
+}
+
+func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
+	// JSON decoding
+	type parameters struct { // what we expect (the request we get)
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params) //decode into params struct using pointer
+	if err != nil {
+		respondWithError(w, 400, fmt.Sprintf("Error decoding parameters: %s", err))
+		return
+	}
+
+	dbUser, err := cfg.db.GetUserByEmail(r.Context(), params.Email) // get user from db
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprint("Incorrect email or password"))
+		return
+	}
+
+	// check for matching password
+	match, err := auth.CheckPasswordHash(params.Password, dbUser.HashedPassword)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprint("Incorrect email or password"))
+		return
+	}
+	if match == false {
+		respondWithError(w, 401, fmt.Sprint("Incorrect email or password"))
+		return
+	}
+
+	respBody := User{ // fill user struct with values from db user
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	respondWithJSON(w, 200, respBody)
 }
 
 func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
@@ -298,6 +354,9 @@ func main() {
 	// handle retrieving chirps
 	myHandler.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirpHandler)
 	myHandler.HandleFunc("GET /api/chirps", cfg.getChirpsHandler)
+
+	// handle login authentication
+	myHandler.HandleFunc("POST /api/login", cfg.loginHandler)
 
 	// configuring http server
 	s := &http.Server{
