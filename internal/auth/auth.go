@@ -2,6 +2,8 @@ package auth
 
 import (
 	"errors"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexedwards/argon2id"
@@ -60,7 +62,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	}
 
 	if !token.Valid {
-		return uuid.Nil, errors.New("Token invalid.")
+		return uuid.Nil, errors.New("token invalid.")
 	}
 
 	subject, err := token.Claims.GetSubject()
@@ -69,7 +71,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	}
 
 	if subject == "" {
-		return uuid.Nil, errors.New("Missing subject.")
+		return uuid.Nil, errors.New("missing subject.")
 	}
 
 	// convert subject string to uuid.UUID object
@@ -80,3 +82,14 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 
 	return userID, nil
 }
+
+func GetBearerToken(headers http.Header) (string, error) {
+	authString := headers.Get("Authorization") // returns something like "Bearer eyJhbGciOiJIUzI1NiIs..."
+	if authString == "" {
+		return "", errors.New("authentication token does not exist.")
+	}
+	tokenString := strings.TrimPrefix(authString, "Bearer ")
+	
+	return tokenString, nil
+}
+
