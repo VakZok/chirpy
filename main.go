@@ -23,6 +23,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 type chirp struct {
@@ -37,6 +38,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -117,16 +119,28 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
+	// Client Authentication
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("could not extract token: %s", err))
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("user not authorized: %s", err))
+		return
+	}
+
 	// JSON decoding
 	type parameters struct { // what we expect (the client request we get)
-		Body   string `json:"body"`
-		UserID string `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
-	if err != nil {                // decoding unsucessfull
+	err = decoder.Decode(&params) // we decode response.Body into the parameters struct using pointers
+	if err != nil {               // decoding unsucessfull
 		respondWithError(w, 400, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
 	}
@@ -141,17 +155,10 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	// Replace any "profane" words
 	cleanedBody := cleanBody(params.Body)
 
-	// Transform String to UUID type
-	parsedID, err := uuid.Parse(params.UserID)
-	if err != nil {
-		respondWithError(w, 400, fmt.Sprintf("Error parsing UserID: %s", err))
-		return
-	}
-
 	// Fill DB query struct (use auto-generated struct from saveChirp.sql.go)
 	queryParameters := database.SaveChirpParams{
 		Body:   cleanedBody,
-		UserID: parsedID,
+		UserID: userID,
 	}
 
 	// Query Database
@@ -218,8 +225,9 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
 	type parameters struct { // what we expect (the request we get)
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"` // optionally sent by client
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -247,11 +255,24 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// configure authentication token expiry
+	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
+		params.ExpiresInSeconds = 3600 // one hour in seconds
+	}
+
+	// generate new authentication token
+	token, err := auth.MakeJWT(dbUser.ID, cfg.jwtSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("failed to create authentication token: %s", err))
+		return
+	}
+
 	respBody := User{ // fill user struct with values from db user
 		ID:        dbUser.ID,
 		CreatedAt: dbUser.CreatedAt,
 		UpdatedAt: dbUser.UpdatedAt,
 		Email:     dbUser.Email,
+		Token:     token,
 	}
 
 	respondWithJSON(w, 200, respBody)
@@ -322,9 +343,22 @@ func main() {
 	dbQueries := database.New(db)
 
 	myHandler := http.NewServeMux()
+
+	// Load environmental variables
+	platform := os.Getenv("PLATFORM")
+	if platform == "" {
+		log.Fatal("PLATFORM must be set")
+	}
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET must be set")
+	}
+
 	cfg := &apiConfig{
-		db:       dbQueries,
-		platform: os.Getenv("PLATFORM"),
+		db:        dbQueries,
+		platform:  platform,
+		jwtSecret: jwtSecret,
 	}
 
 	// Endpoints
