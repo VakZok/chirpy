@@ -23,7 +23,6 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
-	Token     string    `json:"token"`
 }
 
 type chirp struct {
@@ -225,9 +224,14 @@ func (cfg *apiConfig) myUserHandler(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
 	type parameters struct { // what we expect (the request we get)
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds int    `json:"expires_in_seconds"` // optionally sent by client
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	type response struct {
+		User
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -255,27 +259,94 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// configure authentication token expiry
-	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600 {
-		params.ExpiresInSeconds = 3600 // one hour in seconds
-	}
-
 	// generate new authentication token
-	token, err := auth.MakeJWT(dbUser.ID, cfg.jwtSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+	authenticationToken, err := auth.MakeJWT(
+		dbUser.ID,
+		cfg.jwtSecret,
+		time.Hour,
+	)
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("failed to create authentication token: %s", err))
 		return
 	}
 
-	respBody := User{ // fill user struct with values from db user
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
-		Token:     token,
+	// generate new refresh token and add to user account
+	refreshToken := auth.MakeRefreshToken()
+
+	refreshTokenParams := database.CreateRefreshTokenParams{
+		UserID:    dbUser.ID,
+		Token:     refreshToken,
+		ExpiresAt: time.Now().UTC().Add(time.Hour * 24 * 60),
+	}
+
+	_, err = cfg.db.CreateRefreshToken(r.Context(), refreshTokenParams)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("failed to create refresh token: %s", err))
+		return
+	}
+
+	respBody := response{ // fill struct with values from db user
+		User: User{
+			ID:        dbUser.ID,
+			CreatedAt: dbUser.CreatedAt,
+			UpdatedAt: dbUser.UpdatedAt,
+			Email:     dbUser.Email,
+		},
+		Token:        authenticationToken,
+		RefreshToken: refreshToken,
 	}
 
 	respondWithJSON(w, 200, respBody)
+}
+
+func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("could not find refresh token: %s", err))
+		return
+	}
+
+	dbUser, err := cfg.db.GetUserFromRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, fmt.Sprintf("Couldn't get user for refresh token: %s", err))
+		return
+	}
+
+	accessToken, err := auth.MakeJWT(
+		dbUser.ID,
+		cfg.jwtSecret,
+		time.Hour,
+	)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, fmt.Sprintf("Couldn't validate token: %s", err))
+		return
+	}
+
+	type response struct {
+		Token string `json:"token"`
+	}
+
+	respBody := response{
+		Token: accessToken,
+	}
+
+	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("could not find refresh token: %s", err))
+		return
+	}
+
+	_, err = cfg.db.RevokeRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Couldn't revoke session: %s", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
@@ -391,6 +462,8 @@ func main() {
 
 	// handle login authentication
 	myHandler.HandleFunc("POST /api/login", cfg.loginHandler)
+	myHandler.HandleFunc("POST /api/refresh", cfg.refreshHandler)
+	myHandler.HandleFunc("POST /api/revoke", cfg.revokeHandler)
 
 	// configuring http server
 	s := &http.Server{

@@ -1,3 +1,6 @@
 out
 chirpy
 .env
+
+# Override global gitignore rule that ignores anything with "token" in the name
+!*token*
