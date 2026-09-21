@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -89,7 +91,17 @@ func GetBearerToken(headers http.Header) (string, error) {
 		return "", errors.New("authentication token does not exist.")
 	}
 	tokenString := strings.TrimPrefix(authString, "Bearer ")
-	
+
 	return tokenString, nil
 }
 
+func MakeRefreshToken() string {
+	bytes := make([]byte, 32) // all-zero bytes for 256 bits
+	_, err := rand.Read(bytes)
+	if err != nil {
+		// we can't return the error, so we panic instead
+		panic("failed to generate random bytes: " + err.Error())
+	}
+
+	return hex.EncodeToString(bytes)
+}
