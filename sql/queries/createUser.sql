@@ -5,6 +5,6 @@ VALUES (
     NOW(),
     NOW(),
     $1,         -- email from client request
-    $2          -- passworc from client request
+    $2          -- password from client request
 )
 RETURNING *;    -- return all values for http response
