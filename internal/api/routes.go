@@ -29,6 +29,9 @@ func NewRouter(cfg *Config) http.Handler {
 	// handle new user creation
 	mux.HandleFunc("POST /api/users", cfg.createUserHandler)
 
+	// provide ability for users to change their email and password
+	mux.HandleFunc("PUT /api/users", cfg.updateUserHandler)
+
 	// handle retrieving chirps
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirpHandler)
 	mux.HandleFunc("GET /api/chirps", cfg.getChirpsHandler)

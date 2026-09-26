@@ -37,7 +37,7 @@ func (cfg *Config) createChirpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret) // get user from access token
 	if err != nil {
 		respondWithError(w, 401, fmt.Sprintf("user not authorized: %s", err))
 		return

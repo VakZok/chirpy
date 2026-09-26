@@ -180,3 +180,61 @@ func (cfg *Config) revokeHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+	
+func (cfg *Config) updateUserHandler(w http.ResponseWriter, r *http.Request) {
+	// JSON decoding
+	type parameters struct { // new credentials we get from with the request
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params) //decode into params struct using pointer
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("error decoding parameters: %s", err))
+		return
+	}
+
+	// get user by token
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("could not find access token: %s", err))
+		return
+	}
+
+	userID, err := auth.ValidateJWT(accessToken, cfg.jwtSecret) // get user from access token
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("user not authorized: %s", err))
+		return
+	}
+
+	// hash password
+	hash, err := auth.HashPassword(params.Password)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("error hashing password: %s", err))
+		return
+	}
+
+	// update email and password
+	dbParams := database.UpdateUserParams{
+		Email:          params.Email,
+		HashedPassword: hash,
+		ID:             userID,
+	}
+
+	dbUser, err := cfg.db.UpdateUser(r.Context(), dbParams)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("error updating user: %s", err))
+		return
+	}
+
+	responseBody := User{
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	respondWithJSON(w, http.StatusOK, responseBody)
+}
