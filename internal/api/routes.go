@@ -26,6 +26,9 @@ func NewRouter(cfg *Config) http.Handler {
 	// handle posting a chirp in json format (cleaned some bad words)
 	mux.HandleFunc("POST /api/chirps", cfg.createChirpHandler)
 
+	// delete chirps
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.deleteChirpHandler)
+
 	// handle new user creation
 	mux.HandleFunc("POST /api/users", cfg.createUserHandler)
 

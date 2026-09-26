@@ -141,3 +141,47 @@ func (cfg *Config) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, 200, chirp)
 }
+
+
+func (cfg *Config) deleteChirpHandler(w http.ResponseWriter, r *http.Request) {
+	// Client Authentication
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("could not extract token: %s", err))
+		return
+	}
+
+	userID, err := auth.ValidateJWT(accessToken, cfg.jwtSecret) // get user from access token
+	if err != nil {
+		respondWithError(w, 401, fmt.Sprintf("user not authorized: %s", err))
+		return
+	}
+
+	// ransform String to UUID type
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, 400, fmt.Sprintf("error parsing UserID: %s", err))
+		return
+	}
+
+	// get chirp
+	dbChirp, err := cfg.db.GetChirp(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, 404, fmt.Sprintf("chirp not found: %s", err))
+		return
+	}
+
+	// check that the client sending the deletion request is the author of the chirp
+	if dbChirp.UserID != userID {
+		respondWithError(w, 403, "user not authenticated to delete this	tweet")
+		return
+	}
+
+	err = cfg.db.DeleteChirp(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, 500, fmt.Sprintf("error deleting chirp: %s", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
