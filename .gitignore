@@ -4,3 +4,6 @@ chirpy
 
 # Override global gitignore rule that ignores anything with "token" in the name
 !*token*
+
+# Generated sqlc files
+internal/database/*.sql.go
