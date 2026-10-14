@@ -92,7 +92,18 @@ func (cfg *Config) createChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *Config) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 	// since request does not contain json/body, we can tackle the db directly
-	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	var dbChirps []database.Chirp
+	var err error
+	if authorID := r.URL.Query().Get("author_id"); authorID != "" {
+		userID, parseErr := uuid.Parse(authorID)
+		if parseErr != nil {
+			respondWithError(w, 400, "Invalid author_id")
+			return
+		}
+		dbChirps, err = cfg.db.GetChirpsByAuthor(r.Context(), userID)
+	} else {
+		dbChirps, err = cfg.db.GetAllChirps(r.Context())
+	}
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("Error getting chirps: %s", err))
 		return
