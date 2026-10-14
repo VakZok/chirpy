@@ -24,6 +24,18 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 	return match, err
 }
 
+func GetAPIKey(headers http.Header) (string, error) {
+	authHeader := headers.Get("Authorization")
+	if authHeader == "" {
+		return "", errors.New("no authorization header included")
+	}
+	splitAuth := strings.Fields(authHeader)
+	if len(splitAuth) != 2 || splitAuth[0] != "ApiKey" {
+		return "", errors.New("malformed authorization header")
+	}
+	return splitAuth[1], nil
+}
+
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	createdAt := time.Now().UTC()
 	deleteAt := createdAt.Add(expiresIn)

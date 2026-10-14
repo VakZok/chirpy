@@ -11,12 +11,14 @@ type Config struct {
 	db             *database.Queries
 	platform       string
 	jwtSecret      string
+	apiKey         string
 }
 
-func NewConfig(db *database.Queries, platform string, jwtSecret string) *Config {
+func NewConfig(db *database.Queries, platform, jwtSecret, apiKey string) *Config {
 	return &Config{
 		db:        db,
 		platform:  platform,
 		jwtSecret: jwtSecret,
+		apiKey:    apiKey,
 	}
 }

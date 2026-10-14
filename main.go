@@ -35,7 +35,12 @@ func main() {
 		log.Fatal("JWT_SECRET must be set")
 	}
 
-	cfg := api.NewConfig(dbQueries, platform, jwtSecret)
+	apiKey := os.Getenv("POLKA_KEY")
+	if apiKey == "" {
+		log.Fatal("POLKA_KEY must be set")
+	}
+
+	cfg := api.NewConfig(dbQueries, platform, jwtSecret, apiKey)
 
 	// configuring http server
 	s := &http.Server{

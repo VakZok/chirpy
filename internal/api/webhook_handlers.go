@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/VakZok/chirpy/internal/auth"
 	"github.com/google/uuid"
 )
 
 func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
+	// reject unauthorized request
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil || apiKey != cfg.apiKey {
+		respondWithError(w, http.StatusUnauthorized, "invalid or missing API key")
+		return
+	}
+
 	// JSON decoding
 	type parameters struct { // what we expect (the request we get)
 		Event string `json:"event"`
@@ -19,7 +27,7 @@ func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params) //decode into params struct using pointer
+	err = decoder.Decode(&params) //decode into params struct using pointer
 	if err != nil {
 		respondWithError(w, 400, fmt.Sprintf("Error decoding parameters: %s", err))
 		return
