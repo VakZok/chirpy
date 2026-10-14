@@ -44,10 +44,11 @@ func (cfg *Config) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respBody := User{ // fill user struct with values from db user
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
+		ID:          dbUser.ID,
+		CreatedAt:   dbUser.CreatedAt,
+		UpdatedAt:   dbUser.UpdatedAt,
+		Email:       dbUser.Email,
+		IsChirpyRed: dbUser.IsChirpyRed,
 	}
 
 	respondWithJSON(w, 201, respBody)
@@ -119,10 +120,11 @@ func (cfg *Config) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	respBody := response{ // fill struct with values from db user
 		User: User{
-			ID:        dbUser.ID,
-			CreatedAt: dbUser.CreatedAt,
-			UpdatedAt: dbUser.UpdatedAt,
-			Email:     dbUser.Email,
+			ID:          dbUser.ID,
+			CreatedAt:   dbUser.CreatedAt,
+			UpdatedAt:   dbUser.UpdatedAt,
+			Email:       dbUser.Email,
+			IsChirpyRed: dbUser.IsChirpyRed,
 		},
 		Token:        authenticationToken,
 		RefreshToken: refreshToken,
@@ -180,7 +182,7 @@ func (cfg *Config) revokeHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-	
+
 func (cfg *Config) updateUserHandler(w http.ResponseWriter, r *http.Request) {
 	// JSON decoding
 	type parameters struct { // new credentials we get from with the request
@@ -230,10 +232,11 @@ func (cfg *Config) updateUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseBody := User{
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
+		ID:          dbUser.ID,
+		CreatedAt:   dbUser.CreatedAt,
+		UpdatedAt:   dbUser.UpdatedAt,
+		Email:       dbUser.Email,
+		IsChirpyRed: dbUser.IsChirpyRed,
 	}
 
 	respondWithJSON(w, http.StatusOK, responseBody)

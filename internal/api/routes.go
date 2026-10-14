@@ -44,5 +44,8 @@ func NewRouter(cfg *Config) http.Handler {
 	mux.HandleFunc("POST /api/refresh", cfg.refreshHandler)
 	mux.HandleFunc("POST /api/revoke", cfg.revokeHandler)
 
+	// handle webhooks
+	mux.HandleFunc("POST /api/polka/webhooks", cfg.webhookHandler)
+
 	return mux
 }

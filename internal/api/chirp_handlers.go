@@ -67,13 +67,13 @@ func (cfg *Config) createChirpHandler(w http.ResponseWriter, r *http.Request) {
 	cleanedBody := cleanBody(params.Body)
 
 	// Fill DB query struct (use auto-generated struct from saveChirp.sql.go)
-	queryParameters := database.SaveChirpParams{
+	queryParameters := database.PostChirpParams{
 		Body:   cleanedBody,
 		UserID: userID,
 	}
 
 	// Query Database
-	dbChirp, err := cfg.db.SaveChirp(r.Context(), queryParameters)
+	dbChirp, err := cfg.db.PostChirp(r.Context(), queryParameters)
 	if err != nil {
 		respondWithError(w, 500, fmt.Sprintf("Error posting chirp: %s", err))
 		return
@@ -141,7 +141,6 @@ func (cfg *Config) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, 200, chirp)
 }
-
 
 func (cfg *Config) deleteChirpHandler(w http.ResponseWriter, r *http.Request) {
 	// Client Authentication
