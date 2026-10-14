@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/VakZok/chirpy/internal/auth"
@@ -122,6 +123,14 @@ func (cfg *Config) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 
 		chirps = append(chirps, chirp)
 	}
+
+	desc := r.URL.Query().Get("sort") == "desc"
+	sort.Slice(chirps, func(i, j int) bool {
+		if desc {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		}
+		return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+	})
 
 	respondWithJSON(w, 200, chirps)
 }
